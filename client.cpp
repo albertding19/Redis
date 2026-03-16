@@ -6,7 +6,7 @@
 #include <iostream>
 
 static void die(const char *msg) {
-    int err = errno;
+    int err = errno; // errno is a global variable conventionally set when errors are encountered
     fprintf(stderr, "[%d], %s\n", err, msg);
     abort();
 }
@@ -19,8 +19,8 @@ int main() {
 
     struct sockaddr_in addr {};
     addr.sin_family = AF_INET;
-    addr.sin_port = ntohs(1234);
-    addr.sin_addr.s_addr = ntohl(INADDR_LOOPBACK); // 127.0.0.1
+    addr.sin_port = htons(1234);
+    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK); // 127.0.0.1
     int rv = connect(fd, (const struct sockaddr *)&addr, sizeof(addr));
     if (rv) {
         die("connect");
