@@ -13,10 +13,6 @@ Application protocol:
     so when we read, we first read the 4 byte integer len, then read the corresponding payload
 */
 
-static void msg(const char *msg) {
-    fprintf(stderr, "%s\n", msg);
-}
-
 static void die(const char *msg) {
     int err = errno;
     fprintf(stderr, "[%d] %s\n", err, msg);
@@ -25,7 +21,7 @@ static void die(const char *msg) {
 
 // dummy processing
 // one read and one write
-static void do_something(int connfd) {
+[[maybe_unused]] static void do_something(int connfd) {
     char rbuf[64] {};
     ssize_t n = read(connfd, rbuf, sizeof(rbuf) - 1);
     if (n < 0) {
@@ -37,8 +33,6 @@ static void do_something(int connfd) {
     char wbuf[] = "world";
     write(connfd, wbuf, strlen(wbuf));
 }
-
-const size_t k_max_msg = 4096;
 
 static int32_t one_request(int connfd) {
     // read 4 byte length header
@@ -70,7 +64,7 @@ static int32_t one_request(int connfd) {
     char wbuf[4 + sizeof(reply)];
     len = (uint32_t)strlen(reply);
     memcpy(wbuf, &len, 4);
-    memcpy(wbuf, reply, len);
+    memcpy(wbuf + 4, reply, len);
     return write_full(connfd, wbuf, 4 + len);
 }
 
