@@ -6,12 +6,63 @@
 #include <iostream>
 #include <assert.h>
 #include "utilities.h"
+#include <poll.h>
 
 /*
 Application protocol:
     byte stream is of form len1(4 bytes), msg1, len2(4 bytes), msg2, ...
     so when we read, we first read the 4 byte integer len, then read the corresponding payload
 */
+
+/*
+Concurrency:
+    thread-based concurrency would be easy to implement, however, we want to scale to a large number of connections
+    each thread has its own stack so there is significant overhead. Also with a growing number of connections, the memory usage per thread
+    becomes increasingly difficult to control.
+
+    Therefore, the concurrency our Redis cache uses will be event-based concurrency.
+
+*/
+
+/*
+API basics:
+
+    Each socket has a two independent kernel-side buffers for receiving and sending
+    read() copies data from the receiving kernel-side buffer
+    write() copies data to the sending kernel-side buffer
+
+    note that write() does not engage with the network, it merely places data into a buffer.
+    data is pulled from this send buffer and pushed onto the TCP stack, which sends the data over the network
+
+    Chain for sending data from server:
+    write to send buffer ->
+    kernel send buffer pushes data onto serverTCP stack ->
+    data sent to client TCP stack ->
+    TCP reassembles and reorders and copies data into client receive stack ->
+    read from buffer
+
+    Blocking vs non-blocking:
+        if receive buffer is empty, a blocking read will block and wait for more data while a non-blocking read will return with errno == EAGAIN
+        if receive buffer is non-empty, both blocking and non-blocking reads return the data immediately
+
+        if send buffer is full, a blockig write will block and wait until space becomes available in the buffer
+        if send buffer is not full, both blocking and non-blocking writes will write to fill the buffer and return immediately
+
+        we can set flags for blocking and non-blocking using the fcntl syscall.
+
+    Readiness API:
+        int poll(struct pollfd *fds, nfds_t nfds, int timeout)
+        takes an array of struct pollfd of length nfds and blocks until at least one of them is ready.
+        It edits the revents field of each fd to indicate the events that are ready
+        returns number of sockets that are ready
+
+        struct pollfd {
+            int fd;
+            short events; // request: read/write/both
+            short revents; // ready: can read? can write?
+        }
+*/
+
 
 static void die(const char *msg) {
     int err = errno;

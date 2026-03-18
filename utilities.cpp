@@ -5,6 +5,32 @@ void msg(const char *msg) {
     fprintf(stderr, "%s\n", msg);
 }
 
+// sets socket flags to non-blocking for reads and writes
+void fd_set_nonblock(int fd) {
+    int flags = fcntl(fd, F_GETFL, 0);
+    if (flags == -1) {
+        perror("fcntl F_GETFL");
+        return;
+    }
+    flags |= O_NONBLOCK;
+    if (fcntl(fd, F_SETFL, flags) == -1) {
+        perror("fcntl F_SETFL");
+    }
+}
+
+// sets socket flags to blocking for reads and writes
+void fd_set_block(int fd) {
+    int flags = fcntl(fd, F_GETFL, 0);
+    if (flags == -1) {
+        perror("fcntl F_GETFL");
+        return;
+    }
+    flags &= ~O_NONBLOCK;
+    if (fcntl(fd, F_SETFL, flags) == -1) {
+        perror("fcntl F_SETFL");
+    }
+}
+
 // reads a single message of byte size n
 int32_t read_full(int fd, char *buf, size_t n) {
     while (n > 0) {
