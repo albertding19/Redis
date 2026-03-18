@@ -1,8 +1,24 @@
 
 #include "utilities.h"
 
+void die(const char *msg) {
+    int err = errno;
+    fprintf(stderr, "[%d] %s\n", err, msg);
+    abort();
+}
+
 void msg(const char *msg) {
     fprintf(stderr, "%s\n", msg);
+}
+
+// append to the back
+void buf_append(std::vector<uint8_t> &buf, const uint8_t *data, size_t len) {
+    buf.insert(buf.end(), data, data + len);
+}
+
+// remove from front
+void buf_consume(std::vector<uint8_t> &buf, size_t n) {
+    buf.erase(buf.begin(), buf.begin() + n);
 }
 
 // sets socket flags to non-blocking for reads and writes

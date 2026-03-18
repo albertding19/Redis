@@ -63,12 +63,103 @@ API basics:
         }
 */
 
+static bool try_one_request(Conn *conn) {
+    // 3. try to parse
+    if (conn->incoming.size() < 4) {
+        return false;
+    }
+    uint32_t len {0};
+    memcpy(&len, conn->incoming.data(), 4);
+    if (len > k_max_msg) {
+        conn->want_close = true;
+        return false;
+    }
 
-static void die(const char *msg) {
-    int err = errno;
-    fprintf(stderr, "[%d] %s\n", err, msg);
-    abort();
+    if (4 + len > conn->incoming.size()) {
+        return false; // want read
+    }
+
+    const uint8_t *request = &conn->incoming[4];
+    // 4. process
+    // do_something
+    printf("client say: len:%d data:%.*s\n",
+        len, len < 100 ? len : 100, request);
+
+    // generate reply (reply which an echo)
+    buf_append(conn->outgoing, (const uint8_t *)&len, 4);
+    buf_append(conn->outgoing, (const uint8_t *)request, (size_t)len);
+    
+
+    // 5. remove message
+    buf_consume(conn->incoming, 4 + len);
+    return true;
 }
+
+static Conn *handle_accept(int fd) {
+    // accept
+    struct sockaddr_in client_addr{};
+    socklen_t addrlen = sizeof(client_addr);
+    int connfd = accept(fd, (struct sockaddr * )&client_addr, &addrlen);
+    if (connfd < 0) {
+        return NULL;
+    }
+
+    // set new connection to non-blocking
+    fd_set_nonblock(connfd);
+
+    // Create a new Conn struct
+    Conn *conn = new Conn();
+    conn->fd = connfd;
+    conn->want_read = true; // read the first request
+    return conn;
+}
+
+static void handle_read(Conn *conn) {
+    // 1. Do a non-blocking read
+    uint8_t buf[64* 1024];
+    ssize_t rv = read(conn->fd, buf, sizeof(buf));
+    if (rv <= 0) {
+        conn->want_close = true;
+        return;
+    }
+    // 2. Add new data to the Conn::incoming buffer
+    buf_append(conn->incoming, (const uint8_t *)buf, (size_t)rv);
+    // 3. Try to parse the accumulated buffer
+    // 4. Process the parsed message
+    // 5. Remove the message from "Conn::incoming"
+    try_one_request(conn);
+
+    // update readiness intention
+    // read complete if request successfully processed (buffer cleared), or no incoming requests
+    if (conn->incoming.size() == 0) {
+        conn->want_read = false;
+        conn->want_write = true;
+    }
+}
+
+static void handle_write(Conn *conn) {
+    assert(conn->outgoing.size() > 0);
+    ssize_t rv = write(conn->fd, conn->outgoing.data(), conn->outgoing.size());
+
+    if (rv < 0 && errno == EAGAIN) {
+        return; // not actually ready
+    }
+
+    if (rv < 0) {
+        conn->want_close = true;
+        return;
+    }
+
+    // remove written data from outgoing
+    buf_consume(conn->outgoing, (size_t)rv);
+
+    // update intentions
+    // write complete if all data copied to send buffer (outgoing buffer cleared)
+    if (conn->outgoing.size() == 0) {
+        conn->want_read = true;
+        conn->want_write = false;
+    }
+ }
 
 // dummy processing
 // one read and one write
@@ -85,7 +176,7 @@ static void die(const char *msg) {
     write(connfd, wbuf, strlen(wbuf));
 }
 
-static int32_t one_request(int connfd) {
+[[maybe_unused]] static int32_t one_request(int connfd) {
     // read 4 byte length header
     char rbuf[4 + k_max_msg];
     errno = 0;
@@ -149,6 +240,84 @@ int main() {
     rv = listen(fd, SOMAXCONN);
     if (rv) { die("listen()"); }
 
+    // Before entering event loop, set listening socket to non-blocking
+    fd_set_nonblock(fd);
+
+    // Prepare the list of arguments for poll
+    // fd2conn is a map backed by a vector
+    std::vector<Conn *> fd2conn;
+    std::vector<struct pollfd> poll_args;
+
+    // event loop
+    while (true) {
+        // prepare arguments of the poll() call
+        poll_args.clear();
+        // put listening socket in first position
+        struct pollfd pfd = {fd, POLLIN, 0};
+        poll_args.push_back(pfd);
+        //rest are connection sockets
+        for (Conn *conn : fd2conn) {
+            if (!conn) {
+                continue;
+            }
+            struct pollfd pfd = {conn->fd, POLLERR, 0};
+            // set pollfd flags based on intent
+            if (conn->want_read) {
+                pfd.events |= POLLIN;
+            }
+            if (conn->want_write) {
+                pfd.events |= POLLOUT;
+            }
+            poll_args.push_back(pfd);
+        }
+
+        // call poll()
+        // poll blocks (waits) until at least one socket is ready, returns number of ready sockets
+        // poll is the only blocking syscall in the loop, and is the reason we can do concurrency without threads
+        // the purpose of threads was to block and run another thread until its socket is ready
+        int rv = poll(poll_args.data(), (nfds_t)poll_args.size(), -1);
+        if (rv < 0 && errno == EINTR) {
+            // poll might occasionally return premptively due to kernel interrupts
+            continue; // not an error
+        }
+        if (rv < 0) {
+            die("poll");
+        }
+
+        // handle the listening socket if it is ready to accept a new connection
+        // handle_accept returns a Conn object for the new connection
+        if (poll_args[0].revents) {
+            if (Conn *conn = handle_accept(fd)) {
+                if (fd2conn.size() <= (size_t)conn->fd) {
+                    fd2conn.resize(conn->fd + 1);
+                }
+                fd2conn[conn->fd] = conn;
+            }
+        }
+
+        // handle connection sockets
+        for (size_t i = 1; i < poll_args.size(); i++) { // note: skip the listening socket at 0
+
+            uint32_t ready = poll_args[i].revents;
+            Conn *conn = fd2conn[poll_args[i].fd];
+
+            // handle read/writes if connection socket ready
+            if (ready & POLLIN) {
+                handle_read(conn);
+            }
+            if (ready & POLLOUT) {
+                handle_write(conn);
+            }
+
+            // close connections due to socket error or request by application
+            if ((ready & POLLERR) || conn->want_close) {
+                (void)close(conn->fd);
+                fd2conn[conn->fd] = NULL;
+                delete conn;
+            }
+        }    
+    }
+    /*
     // After the listening socket is established, the server should enter a loop
     // that accepts and processes each client connection
     while (true) {
@@ -177,4 +346,5 @@ int main() {
         close(connfd);
     }
     return 0;
+    */
 }

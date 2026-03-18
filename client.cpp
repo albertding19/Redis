@@ -6,12 +6,6 @@
 #include <iostream>
 #include "utilities.h"
 
-static void die(const char *msg) {
-    int err = errno; // errno is a global variable conventionally set when errors are encountered
-    fprintf(stderr, "[%d], %s\n", err, msg);
-    abort();
-}
-
 // send 
 static int32_t query(int fd, const char *text) {
     uint32_t len = (uint32_t)strlen(text);

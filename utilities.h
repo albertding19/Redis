@@ -10,7 +10,13 @@
 
 const size_t k_max_msg = 4096;
 
+void die(const char *msg);
+
 void msg(const char *msg);
+
+void buf_append(std::vector<uint8_t> &, const uint8_t *, size_t);
+
+void buf_consume(std::vector<uint8_t> &, size_t);
 
 void fd_set_nonblock(int fd);
 
