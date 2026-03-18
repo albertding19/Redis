@@ -75,6 +75,11 @@ Pipelined requests (optimization)
     Since we are only paying for the network latency of 1 roundtrip instead of 1000 and the network latency cost trumps the processing cost.
 */
 
+static bool try_one_request(Conn *);
+static void handle_read(Conn *);
+static void handle_write(Conn *);
+
+
 static bool try_one_request(Conn *conn) {
     // 3. try to parse
     if (conn->incoming.size() < 4) {
@@ -94,7 +99,7 @@ static bool try_one_request(Conn *conn) {
     const uint8_t *request = &conn->incoming[4];
     // 4. process
     // do_something
-    printf("client say: len:%d data:%.*s\n",
+    printf("client says: len:%d data:%.*s\n",
         len, len < 100 ? len : 100, request);
 
     // generate reply (reply which an echo)
