@@ -63,6 +63,18 @@ API basics:
         }
 */
 
+/*
+Pipelined requests (optimization)
+    network latency makes sending requests from client to server expensive
+    For each round trip (request -> response), a network latency induced cost is paid
+    So for sequential processing (1 request and 1 response at time), a network latency is paid each round trip
+    so 1000 network latencies are paid for 1000 roundtrips
+
+    We can optimize this by using batch processing. Send all 1000 requests in the same batch, then send all 1000 replies in the same batch.
+    This reduces the roundtrips from 1000 to 1, effectively reducing run time by a factor of 1000.
+    Since we are only paying for the network latency of 1 roundtrip instead of 1000 and the network latency cost trumps the processing cost.
+*/
+
 static bool try_one_request(Conn *conn) {
     // 3. try to parse
     if (conn->incoming.size() < 4) {
@@ -127,13 +139,13 @@ static void handle_read(Conn *conn) {
     // 3. Try to parse the accumulated buffer
     // 4. Process the parsed message
     // 5. Remove the message from "Conn::incoming"
-    try_one_request(conn);
-
+    while (try_one_request(conn)) {}
     // update readiness intention
     // read complete if request successfully processed (buffer cleared), or no incoming requests
     if (conn->incoming.size() == 0) {
         conn->want_read = false;
         conn->want_write = true;
+        handle_write(conn);
     }
 }
 
