@@ -82,21 +82,21 @@ static void handle_write(Conn *);
 
 static bool try_one_request(Conn *conn) {
     // 3. try to parse
-    if (conn->incoming.size() < 4) {
+    if (buf_size(conn->incoming) < 4) {
         return false;
     }
     uint32_t len {0};
-    memcpy(&len, conn->incoming.data(), 4);
+    memcpy(&len, conn->incoming->data_begin, 4);
     if (len > k_max_msg) {
         conn->want_close = true;
         return false;
     }
 
-    if (4 + len > conn->incoming.size()) {
+    if (4 + len > buf_size(conn->incoming)) {
         return false; // want read
     }
 
-    const uint8_t *request = &conn->incoming[4];
+    const uint8_t *request = conn->incoming->data_begin + 4;
     // 4. process
     // do_something
     printf("client says: len:%d data:%.*s\n",
@@ -147,7 +147,7 @@ static void handle_read(Conn *conn) {
     while (try_one_request(conn)) {}
     // update readiness intention
     // read complete if request successfully processed (buffer cleared), or no incoming requests
-    if (conn->incoming.size() == 0) {
+    if (buf_size(conn->incoming) == 0) {
         conn->want_read = false;
         conn->want_write = true;
         handle_write(conn);
@@ -155,8 +155,8 @@ static void handle_read(Conn *conn) {
 }
 
 static void handle_write(Conn *conn) {
-    assert(conn->outgoing.size() > 0);
-    ssize_t rv = write(conn->fd, conn->outgoing.data(), conn->outgoing.size());
+    assert(buf_size(conn->outgoing) > 0);
+    ssize_t rv = write(conn->fd, conn->outgoing->data_begin, buf_size(conn->outgoing));
 
     if (rv < 0 && errno == EAGAIN) {
         return; // not actually ready
@@ -172,7 +172,7 @@ static void handle_write(Conn *conn) {
 
     // update intentions
     // write complete if all data copied to send buffer (outgoing buffer cleared)
-    if (conn->outgoing.size() == 0) {
+    if (buf_size(conn->outgoing) == 0) {
         conn->want_read = true;
         conn->want_write = false;
     }
