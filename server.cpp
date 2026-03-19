@@ -7,6 +7,8 @@
 #include <assert.h>
 #include "utilities.h"
 #include <poll.h>
+#include <map>
+#include "response.h"
 
 /*
 Application protocol:
@@ -75,13 +77,98 @@ Pipelined requests (optimization)
     Since we are only paying for the network latency of 1 roundtrip instead of 1000 and the network latency cost trumps the processing cost.
 */
 
+/*
+Request-response message format for Redis cache:
+
+    Using the length prefixed formet: len, msg1, len, msg2, ..., a Redis request is simply a sequence
+    of get, set, and del commands. So the inner messages msgk can be represented in the following format 
+    nstr(4B), len1(4B), str1, len2(4B), str2, ..., lenn(4B), strn
+
+    nstr represents number of items in the request
+    lenk represents the length of message k
+    strk is the kth item represented in string format
+
+    Note that it may be tempting to eschew the lenk in favor of delimiters. However this will cause
+    problems as the strings themselves may contain delimiters. For now, we'll keep it simple.
+
+    The response will be an integer status code followed by a string representing the data:
+    status(4B), data
+*/
+
+#define RES_NX 100 // not found
+#define RES_ERR 101 // unrecognized command
+
+const uint32_t k_max_args {128};
+
+// KV store placeholder, to be improved with a hashmap
+static std::map<std::string, std::string> g_data {};
+
 static bool try_one_request(Conn *);
 static void handle_read(Conn *);
 static void handle_write(Conn *);
 
+static uint32_t 
+parse_req(const uint8_t *request, size_t len, std::vector<std::string> &cmd) {
+    const uint8_t *end = request + len;
+    uint32_t nstr {};
+    if (!read_u32(request, end, nstr)) {
+        return -1;
+    }
+    if (nstr > k_max_args) {
+        return -1;
+    }
+
+    while (cmd.size() < nstr) {
+        uint32_t len = 0;
+        if (!read_u32(request, end, len)) {
+            return -1;
+        }
+        cmd.push_back(std::string());
+        if (!read_str(request, end, len, cmd.back())) {
+            return -1;
+        }
+    }
+
+    if (request != end) {
+        return -1;
+    }
+
+    return 0;
+}
+
+static void do_request(std::vector<std::string> &cmd, struct Response &resp) {
+    if (cmd.size() == 2 && cmd[0] == "get") {
+        // get k
+        auto it = g_data.find(cmd[1]);
+        if (it == g_data.end()) {
+            resp.status = RES_NX; // not found
+            return;
+        }
+        const std::string &val = it->second;
+        resp.data.assign(val.begin(), val.end());
+    } else if (cmd.size() == 3 && cmd[0] == "set") {
+        // set k v
+        g_data[cmd[1]].swap(cmd[2]);
+    } else if (cmd.size() == 2 && cmd[0] == "del") {
+        // del k
+        g_data.erase(cmd[1]);
+    } else {
+        resp.status = RES_ERR; // command not recognized
+    }
+}
+
+static void make_response(struct Response &resp, struct Buffer *out) {
+    // serialize the response
+    uint32_t resp_len = 4 + (uint32_t)resp.data.size();
+    buf_append(out, (const uint8_t *)&resp_len, 4);
+    buf_append(out, (const uint8_t *)&resp.status, 4);
+    buf_append(out, resp.data.data(), resp.data.size());
+}
+
 
 static bool try_one_request(Conn *conn) {
-    // 3. try to parse
+    // 3. try to parse according to the application protocol 
+    // current application protocol is described above
     if (buf_size(conn->incoming) < 4) {
         return false;
     }
@@ -97,8 +184,20 @@ static bool try_one_request(Conn *conn) {
     }
 
     const uint8_t *request = conn->incoming->data_begin + 4;
+
+    // got a request, now parse the insides of the request (nstr, len1, str1, ..., lenn, strn)
+    std::vector<std::string> cmd;
+    if (parse_req(request, len, cmd) < 0) {
+        conn->want_close = true;
+        return false;
+    }
+
     // 4. process
-    // do_something
+    Response resp;
+    do_request(cmd, resp);
+    make_response(resp, conn->outgoing);
+
+    // TODO: delete this after working implementation of request-response Redis
     printf("client says: len:%d data:%.*s\n",
         len, len < 100 ? len : 100, request);
 

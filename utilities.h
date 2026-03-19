@@ -20,3 +20,7 @@ void fd_set_block(int fd);
 int32_t read_full(int fd, char *buf, size_t n);
 
 int32_t write_full(int fd, const char *buf, size_t n);
+
+bool read_u32(const uint8_t *&, const uint8_t *, uint32_t &);
+
+bool read_str(const uint8_t *&, const uint8_t *, size_t, std::string &);

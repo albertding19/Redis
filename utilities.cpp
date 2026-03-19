@@ -77,3 +77,22 @@ int32_t write_full(int fd, const char *buf, size_t n) {
     }
     return 0;
 }
+
+bool read_u32(const uint8_t *&cur, const uint8_t *end, uint32_t &out) {
+    if (cur + 4 > end) {
+        return false;
+    }
+    memcpy(&out, cur, 4);
+    cur += 4;
+    return true;
+}
+
+bool 
+read_str(const uint8_t *&cur, const uint8_t *end, size_t len, std::string &out) {
+    if (cur + len > end) {
+        return false;
+    }
+    out.assign(cur, cur + len);
+    cur += len;
+    return true;
+}
