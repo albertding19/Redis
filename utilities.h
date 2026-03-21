@@ -1,4 +1,5 @@
 
+#pragma once
 #include <cstdint>
 #include <unistd.h>
 #include <cstdio>
@@ -7,7 +8,6 @@
 #include <assert.h>
 #include <fcntl.h>
 #include <vector>
-#include "conn.h"
 
 void die(const char *msg);
 

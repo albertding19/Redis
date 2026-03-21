@@ -9,6 +9,8 @@
 #include <poll.h>
 #include <map>
 #include "response.h"
+#include "conn.h"
+#include "protocol.h"
 
 /*
 Application protocol:
@@ -94,11 +96,6 @@ Request-response message format for Redis cache:
     The response will be an integer status code followed by a string representing the data:
     status(4B), data
 */
-
-#define RES_NX 100 // not found
-#define RES_ERR 101 // unrecognized command
-
-const uint32_t k_max_args {128};
 
 // KV store placeholder, to be improved with a hashmap
 static std::map<std::string, std::string> g_data {};

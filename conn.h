@@ -1,4 +1,5 @@
 
+#pragma once
 #include "buffer.h"
 
 // state for each connection

@@ -6,6 +6,8 @@
 #include <iostream>
 #include "utilities.h"
 #include <sstream>
+#include "conn.h"
+#include "protocol.h"
 
 static int32_t parse_command(std::string text, char *wbuf) {
     // tokenise

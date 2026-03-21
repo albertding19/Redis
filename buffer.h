@@ -1,10 +1,11 @@
 
+#pragma once
 #include <cstdint>
 #include <cstdlib>
 #include <cstdio>
 #include <vector>
+#include "protocol.h"
 
-const size_t k_max_msg = 4096;
 const size_t buf_size_initial {128};
 const int growth_factor {2};
 
