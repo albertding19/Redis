@@ -110,7 +110,7 @@ static void handle_write(Conn *);
 static uint32_t 
 parse_req(const uint8_t *request, size_t len, std::vector<std::string> &cmd) {
     const uint8_t *end = request + len;
-    uint32_t nstr {};
+    uint32_t nstr {0};
     if (!read_u32(request, end, nstr)) {
         return -1;
     }
@@ -157,9 +157,9 @@ static void do_request(std::vector<std::string> &cmd, struct Response &resp) {
     }
 }
 
-static void make_response(struct Response &resp, struct Buffer *out) {
+static void make_response(struct Response &resp, struct Buffer *&out) {
     // serialize the response
-    uint32_t resp_len = 4 + (uint32_t)resp.data.size();
+    uint32_t resp_len = 4 + static_cast<uint32_t>(resp.data.size());
     buf_append(out, (const uint8_t *)&resp_len, 4);
     buf_append(out, (const uint8_t *)&resp.status, 4);
     buf_append(out, resp.data.data(), resp.data.size());
@@ -195,15 +195,14 @@ static bool try_one_request(Conn *conn) {
     // 4. process
     Response resp;
     do_request(cmd, resp);
+
+    for (const std::string &s : cmd) {
+        printf("%s ", s.c_str());
+    }
+    printf("\n");
+
+    // generate reply 
     make_response(resp, conn->outgoing);
-
-    // TODO: delete this after working implementation of request-response Redis
-    printf("client says: len:%d data:%.*s\n",
-        len, len < 100 ? len : 100, request);
-
-    // generate reply (reply which an echo)
-    buf_append(conn->outgoing, (const uint8_t *)&len, 4);
-    buf_append(conn->outgoing, (const uint8_t *)request, (size_t)len);
     
 
     // 5. remove message
