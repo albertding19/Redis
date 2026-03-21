@@ -1,0 +1,8 @@
+# Compiled binaries
+server
+client
+
+# Build artifacts
+*.vscode
+*.dSYM/
+*.o
